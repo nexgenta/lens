@@ -12,6 +12,7 @@ class LensCLI extends Router
 		$this->sapi['cli']['event'] = array('class' => 'LensEvent', 'description' => 'Log a new event to a sink');
 		$this->sapi['cli']['add-index'] = array('class' => 'LensAddIndex', 'description' => 'Create a new index on a sink');
 		$this->sapi['cli']['reindex'] = array('class' => 'LensReindex', 'description' => 'Re-index events in a sink');
+		$this->sapi['cli']['add-group'] = array('class' => 'LensAddGroup', 'description' => 'Create a new aggregate on a sink');
 	}
 }
 
@@ -159,5 +160,41 @@ class LensReindex extends LensCommandLine
 		}
 		$this->model->indexEventsInSinkWithName($this->target);
 		return 0;
+	}
+}
+
+class LensAddGroup extends LensCommandLine
+{
+	protected $target;
+	protected $groupName;
+	protected $parent;
+	protected $fields;
+	
+	protected function checkargs(&$args)
+	{
+		if(!parent::checkargs($args)) return false;
+		if(count($args) != 3 && count($args) != 4)
+		{
+			return $this->error(Error::NO_OBJECT, null, null, 'Usage: lens add-group SINK-NAME GROUP-NAME FIELD-LIST [PARENT-GROUP]');
+		}
+		$this->target = $args[0];
+		$this->groupName = $args[1];
+		$this->fields = explode(',', $args[2]);
+		if(isset($args[3]))
+		{
+			$this->parent = $args[3];
+		}
+		return true;
+	}
+	
+	public function main($args)
+	{
+		if(!($sink = $this->model->sinkWithName($this->target)))
+		{
+			echo "No sink named '" . $this->target . "' exists\n";
+			return 1;
+		}
+		$this->model->createGroupForSinkWithName($this->target, $this->groupName, $this->fields, $this->parent);
+		return 0;	
 	}
 }
