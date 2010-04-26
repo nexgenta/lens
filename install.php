@@ -26,3 +26,17 @@
  * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS 
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
+class LensModuleInstall extends ModuleInstaller
+{
+	public function writeInstanceConfig($file)
+	{
+		$this->writePlaceholderDBIri($file);
+	}
+	
+	public function writeAppConfig($file)
+	{
+		fwrite($file, "\$SETUP_MODULES[] = 'lens';\n");
+		fwrite($file, "\$CLI_ROUTES['lens'] = array('name' => 'lens', 'file' => 'cli.php', 'class' => 'LensCLI', 'description' => 'Manage Lens event indexes');\n");
+	}
+}
