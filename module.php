@@ -31,7 +31,7 @@ uses('module');
 
 class LensModule extends Module
 {
-	public $latestVersion = 3;
+	public $latestVersion = 4;
 	public $moduleId = 'com.nexgenta.lens';
 	
 	public static function getInstance($args = null, $className = null, $defaultDbIri = null)
@@ -79,6 +79,20 @@ class LensModule extends Module
 			$t->indexWithSpec('group_uuid', DBIndex::INDEX, 'group_uuid');
 			$t->indexWithSpec('index_name', DBIndex::INDEX, 'index_name');			
 			return $t->apply();
+		}
+		if($targetVersion == 4)
+		{
+			$objects = $this->db->rows('SELECT * FROM {lens__objects}');
+			foreach($objects as $target)
+			{
+				$t = $this->db->schema->table('lens_' . $target['object_name']);
+				$t->columnWithSpec('_minute', DBType::INT, null, DBCol::NOT_NULL, null, 'The minute at which the event occurred');
+				$t->columnWithSpec('_second', DBType::INT, null, DBCol::NOT_NULL, null, 'The second at which the event occurred');
+				$t->indexWithSpec('_minute', DBIndex::INDEX, '_minute');
+				$t->indexWithSpec('_second', DBIndex::INDEX, '_second');
+				$t->apply();
+			}
+			return true;
 		}
 	}
 }
