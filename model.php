@@ -188,7 +188,7 @@ class Lens extends Model
 		return $uuid;
 	}
 	
-	public function addEvent($name, $data, $lazy = false)
+	public function addEvent($name, $data, $lazy = false, $cascade = false)
 	{
 		if(!($target = $this->sinkWithName($name)))
 		{
@@ -225,13 +225,15 @@ class Lens extends Model
 			'_yearweek' => gmstrftime('%V', $now),
 			'_yearday' => gmstrftime('%j', $now),
 			'_hour' => gmstrftime('%H', $now),			
+			'_minute' => gmstrftime('%m', $now),
+			'_second' => gmstrftime('%s', $now),
 			'_dirty' => 'Y',
 			'_kind' => $kind,
 			'_data' => $json,
 		));
 		if(!$lazy)
 		{
-			$this->indexEvent($target, $uuid, $now, $data);
+			$this->indexEvent($target, $uuid, $now, $data, $cascade);
 		}
 		return $uuid;
 	}
@@ -273,12 +275,12 @@ class Lens extends Model
 		return $c;
 	}
 	
-	protected function indexEvent($target, $uuid, $timestamp, $data)
+	protected function indexEvent($target, $uuid, $timestamp, $data, $cascade = true)
 	{
 		$indexes = $this->indexesForSinkWithUuid($target['uuid']);
 		
-		$values = array('"_dirty" = ?');
-		$args = array('N');
+		$values = array();
+		$args = array();
 				
 		foreach($indexes as $index)
 		{
@@ -292,22 +294,34 @@ class Lens extends Model
 				$args[] = null;
 			}
 		}
+		$year = gmstrftime('%Y', $timestamp);
+		$yearday = gmstrftime('%j', $timestamp);
+		$hour = gmstrftime('%H', $timestamp);
 		
 		$criteria = array('"_year" = ?');
-		$args[] = strftime('%Y', $timestamp);
+		$args[] = $year;
 
 		$criteria[] = '"_yearday" = ?';
-		$args[] = strftime('%j', $timestamp);
+		$args[] = $yearday;
 		
 		$criteria[] = '"_hour" = ?';
-		$args[] = strftime('%H', $timestamp);
+		$args[] = $hour;
 
 		$criteria[] = '"_uuid" = ?';
 		$args[] = $uuid;
 
-
-		$q = 'UPDATE {lens_' . $target['name'] . '} SET ' . implode(', ', $values) . ' WHERE ' . implode(' AND ', $criteria);
-		$this->db->vexec($q, $args);
-		/* XXX: Cascade dirty flag to down to aggregates */
+		if(count($values))
+		{
+			$q = 'UPDATE {lens_' . $target['name'] . '} SET ' . implode(', ', $values) . ' WHERE ' . implode(' AND ', $criteria);
+			$this->db->vexec($q, $args);
+		}
+		if($cascade)
+		{
+			$this->cascadeAggregatesForTarget($target, null, $uuid, $year, $yearday, $hour);
+		}
+	}
+	
+	protected function cascadeAggregatesForTarget($target, $parent, $uuid, $year, $yearday, $hour)
+	{
 	}
 }
