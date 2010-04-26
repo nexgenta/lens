@@ -105,6 +105,8 @@ class Lens extends Model
 		$t->columnWithSpec('_yearweek', DBType::INT, null, DBCol::NOT_NULL|DBCol::UNSIGNED, null, 'ISO-8601:1988 Week of the year the entry was created (1-53)');
 		$t->columnWithSpec('_yearday', DBType::INT, null, DBCol::NOT_NULL|DBCol::UNSIGNED, null, 'Day of the year the entry was created (1-366)');
 		$t->columnWithSpec('_hour', DBType::INT, null, DBCol::NOT_NULL|DBCol::UNSIGNED, null, 'Hour of the day the entry was created (0-23)');
+		$t->columnWithSpec('_minute', DBType::INT, null, DBCol::NOT_NULL|DBCol::UNSIGNED, null, 'Minute at which the event occurred (0-59)');
+		$t->columnWithSpec('_second', DBType::INT, null, DBCol::NOT_NULL|DBCol::UNSIGNED, null, 'Second at which the event occurred (0-59)');
 		$t->columnWithSpec('_dirty', DBType::BOOL, null, DBCol::NOT_NULL, null, 'If "Y", this entry must be re-indexed');
 		$t->columnWithSpec('_kind', DBType::VARCHAR, 32, DBCol::NULLS, null, 'Optional event type');
 		$t->columnWithSpec('_data', DBType::TEXT, null, DBCol::NULLS, null, 'Event data');
@@ -115,6 +117,8 @@ class Lens extends Model
 		$t->indexWithSpec('_yearweek', DBIndex::INDEX, '_yearweek');
 		$t->indexWithSpec('_yearday', DBIndex::INDEX, '_yearday');
 		$t->indexWithSpec('_hour', DBIndex::INDEX, '_hour');
+		$t->indexWithSpec('_minute', DBIndex::INDEX, '_minute');
+		$t->indexWithSpec('_second', DBIndex::INDEX, '_second');
 		$t->indexWithSpec('_dirty', DBIndex::INDEX, '_dirty');
 		$t->indexWithSpec('_kind', DBIndex::INDEX, '_kind');
 		if(!$t->apply())
