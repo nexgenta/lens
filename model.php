@@ -95,6 +95,7 @@ class Lens extends Model
 			));
 		}
 		while(!$this->db->commit());
+		
 		$t = $this->db->schema->tableWithOptions('lens_' . $name, DBTable::CREATE_ALWAYS);
 		$t->columnWithSpec('_uuid', DBType::UUID, null, DBCol::NOT_NULL, null, 'Unique identifier for this event');
 		$t->columnWithSpec('_timestamp', DBType::DATETIME, null, DBCol::NOT_NULL, null, 'Timestamp of the entry');
@@ -192,6 +193,94 @@ class Lens extends Model
 		return $uuid;
 	}
 	
+	public function groupWithNameForSinkWithUuid($name, $target)
+	{
+		if(($row = $this->db->row('SELECT "group_uuid" AS "uuid", "group_name" AS "name", "group_parent" AS "parent", "group_fields" AS "fields" FROM {lens__groups} WHERE "object_uuid" = ? AND "group_name" = ?', $target, $name)))
+		{
+			$row['fields'] = explode(',', $row['fields']);
+		}
+		return $row;
+	}
+	
+	public function createGroupForSinkWithName($targ, $name, $fields, $parent = null)
+	{
+		if(!($target = $this->sinkWithName($targ)))
+		{
+			trigger_error('Lens::createGroupForSinkWithName(): The sink "' . $targ . '" does not exist', E_USER_NOTICE);
+			return false;
+		}
+		if(strlen($parent))
+		{
+			if(!($group = $this->groupWithNameForSinkWithUuid($parent, $target['uuid'])))
+			{
+				trigger_error('Lens::createGroupForSinkWithName(): The group "' . $parent . '" does not exist', E_USER_NOTICE);
+				return false;
+			}
+		}
+		$fieldList = array();
+		foreach($fields as $f)
+		{
+			if($f == '_year' || $f == '_month' || $f == '_day' || $f == '_weekday' || $f == '_yearweek' || $f == '_yearday' || $f == '_hour' || $f == '_minute' || $f == '_second')
+			{
+				$fieldList[$f] = array(DBType::INT, null, DBCol::NOT_NULL|DBCol::UNSIGNED, null, 'Value from the grouped ' . $f . ' field', true);
+			}
+			else
+			{
+				trigger_error('Lens::createGroupForSinkWithName(): Cannot aggregate on unknown field "' . $f . '"', E_USER_WARNING);
+			}
+		}
+		$uuid = UUID::generate();
+		do
+		{
+			$this->db->begin();
+			if(($me = $this->groupWithNameForSinkWithUuid($name, $target['uuid'])))
+			{
+				$this->db->rollback();
+				trigger_error('Lens::createGroupForSinkWithName(): The group "' . $name . '" already exists', E_USER_NOTICE);
+				return false;
+			}
+			$this->db->insert('lens__groups', array(
+				'group_uuid' => $uuid,
+				'object_uuid' => $target['uuid'],
+				'group_name' => $name,
+				'group_parent' => strlen($parent) ? $group['uuid'] : null,
+				'group_fields' => implode(',', $fields),
+			));
+		}
+		while(!$this->db->commit());
+		$t = $this->db->schema->tableWithOptions('lens_' . $target['name'] . '_' . $name, DBTable::CREATE_ALWAYS);
+		$t->columnWithSpec('_count', DBType::INT, null, DBCol::NOT_NULL|DBCol::UNSIGNED|DBCol::BIG, 0, 'The number of events in this aggregated collection');
+		$t->columnWithSpec('_dirty', DBType::BOOL, null, DBCol::NOT_NULL, null, 'If "Y", this entry must be re-indexed');
+		$t->indexWithSpec('_dirty', DBIndex::INDEX, '_dirty');
+		foreach($fieldList as $k => $field)
+		{
+			$t->columnWithSpec($k, $field[0], $field[1], $field[2], $field[3], $field[4]);
+			if($field[5])
+			{
+				$t->indexWithSpec($k, DBIndex::INDEX, $k);
+			}
+		}
+		if(!$t->apply())
+		{
+			$this->db->exec('DELETE FROM {lens__groups} WHERE "group_uuid" = ?', $uuid);
+			return false;
+		}
+		do
+		{
+			$this->db->begin();
+			if(strlen($parent))
+			{
+				$this->db->exec('UPDATE {lens_' . $target['name'] . '_' . $group['name'] . '} SET "_dirty" = ?', 'Y');
+			}
+			else
+			{
+				$this->db->exec('UPDATE {lens_' . $target['name'] . '} SET "_dirty" = ?' , 'Y');
+			}
+		}
+		while(!$this->db->commit());
+		return $uuid;
+	}
+	
 	public function addEvent($name, $data, $lazy = false, $cascade = false)
 	{
 		if(!($target = $this->sinkWithName($name)))
@@ -219,7 +308,7 @@ class Lens extends Model
 		}
 		$now = time();
 		$uuid = UUID::generate();
-		$this->db->insert('lens_' . $target['name'], array(
+		$fields =  array(
 			'_uuid' => $uuid,
 			'_timestamp' => gmstrftime('%Y-%m-%d %H:%M:%S', $now),
 			'_year' => gmstrftime('%Y', $now),
@@ -229,15 +318,16 @@ class Lens extends Model
 			'_yearweek' => gmstrftime('%V', $now),
 			'_yearday' => gmstrftime('%j', $now),
 			'_hour' => gmstrftime('%H', $now),			
-			'_minute' => gmstrftime('%m', $now),
-			'_second' => gmstrftime('%s', $now),
+			'_minute' => gmstrftime('%M', $now),
+			'_second' => gmstrftime('%S', $now),
 			'_dirty' => 'Y',
 			'_kind' => $kind,
 			'_data' => $json,
-		));
+		);
+		$this->db->insert('lens_' . $target['name'], $fields);
 		if(!$lazy)
 		{
-			$this->indexEvent($target, $uuid, $now, $data, $cascade);
+			$this->indexEvent($target, $uuid, $now, $data, $fields, $lazy, $cascade);
 		}
 		return $uuid;
 	}
@@ -274,17 +364,17 @@ class Lens extends Model
 			if(!$event) break;
 			$timestamp = strtotime($event['_timestamp']);
 			$data = json_decode($event['_data'], true);
-			$this->indexEvent($target, $event['_uuid'], $timestamp, $data);
+			$this->indexEvent($target, $event['_uuid'], $timestamp, $data, $event, false, false);
 		}
 		return $c;
 	}
 	
-	protected function indexEvent($target, $uuid, $timestamp, $data, $cascade = true)
+	protected function indexEvent($target, $uuid, $timestamp, $data, $event, $lazy = true, $cascade = true)
 	{
 		$indexes = $this->indexesForSinkWithUuid($target['uuid']);
 		
-		$values = array();
-		$args = array();
+		$values = array('"_dirty" = ?');
+		$args = array('N');
 				
 		foreach($indexes as $index)
 		{
@@ -292,16 +382,24 @@ class Lens extends Model
 			if(isset($data[$index['name']]))
 			{
 				$args[] = $data[$index['name']];
+				$event[$index['name']] = $data[$index['name']];
 			}
 			else
 			{
 				$args[] = null;
+				$event[$index['name']] = null;
 			}
 		}
-		$year = gmstrftime('%Y', $timestamp);
-		$yearday = gmstrftime('%j', $timestamp);
-		$hour = gmstrftime('%H', $timestamp);
-		
+		$event['_year'] = $year = gmstrftime('%Y', $timestamp);
+		$event['_month'] = gmstrftime('%m', $timestamp);
+		$event['_day'] = gmstrftime('%d', $timestamp);
+		$event['_weekday'] = gmstrftime('%w', $timestamp);
+		$event['_yearweek'] = gmstrftime('%V', $timestamp);
+		$event['_yearday'] = $yearday = gmstrftime('%j', $timestamp);
+		$event['_hour'] = $hour = gmstrftime('%H', $timestamp);
+		$event['_minute'] = gmstrftime('%M', $timestamp);
+		$event['_second'] = gmstrftime('%S', $timestamp);
+
 		$criteria = array('"_year" = ?');
 		$args[] = $year;
 
@@ -319,13 +417,67 @@ class Lens extends Model
 			$q = 'UPDATE {lens_' . $target['name'] . '} SET ' . implode(', ', $values) . ' WHERE ' . implode(' AND ', $criteria);
 			$this->db->vexec($q, $args);
 		}
-		if($cascade)
-		{
-			$this->cascadeAggregatesForTarget($target, null, $uuid, $year, $yearday, $hour);
-		}
+		$this->performAggregatesForTarget($target, null, $data, $event, $timestamp, $cascade, $lazy);
 	}
 	
-	protected function cascadeAggregatesForTarget($target, $parent, $uuid, $year, $yearday, $hour)
+	protected function performAggregatesForTarget($target, $parent, $data, $event, $timestamp, $cascade, $lazy)
 	{
+		if($lazy)
+		{
+			$cascade = false;
+		}
+		if($parent === null)
+		{
+			$groups = $this->db->rows('SELECT "group_uuid" AS "uuid", "group_name" AS "name", "group_fields" AS "fields" FROM {lens__groups} WHERE "object_uuid" = ? AND "group_parent" IS NULL', $target['uuid']);
+		}
+		else
+		{
+			$groups = $this->db->rows('SELECT "group_uuid" AS "uuid", "group_name" AS "name", "group_fields" AS "fields" FROM {lens__groups} WHERE "object_uuid" = ? AND "group_parent" = ?', is_array($parent ? $parent['uuid'] : $parent));
+		}
+		foreach($groups as $group)
+		{
+			$fields = explode(',', $group['fields']);
+			$values = array();
+			foreach($fields as $f)
+			{
+				if(isset($event[$f]))
+				{
+					$values[$f] = $event[$f];
+				}
+				else
+				{
+					$values[$f] = null;
+				}
+			}
+			$criteria = array();
+			foreach($values as $k => $v)
+			{
+				if($v === null)
+				{
+					$criteria[] = '"' . $k . '" IS NULL';
+				}
+				else
+				{
+					$criteria[] = '"' . $k . '" = ' . $this->db->quote($v);
+				}
+			}
+			$table = 'lens_' . $target['name'] . '_' . $group['name'];
+			do
+			{
+				$this->db->begin();
+				if(($row = $this->db->row('SELECT * FROM {' . $table . '} WHERE ' . implode(' AND ', $criteria))))
+				{
+					$this->db->exec('UPDATE {' . $table . '} SET "_dirty" = ? WHERE ' . implode(' AND ', $criteria), 'Y');
+				}
+				else
+				{
+					$values['_dirty'] = 'Y';
+					$this->db->insert($table, $values);
+				}
+			}
+			while(!$this->db->commit());
+			/* If not lazy, perform aggregate value updates */
+			/* If cascade, pass this group onto children */
+		}
 	}
 }
