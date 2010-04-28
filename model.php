@@ -73,6 +73,20 @@ class Lens extends Model
 		return $row;
 	}
 	
+	public function sinkNameList()
+	{
+		if(!($rows = $this->db->rows('SELECT "object_name" AS "name" FROM {lens__objects}')))
+		{
+			return array();
+		}
+		$list = array();
+		foreach($rows as $r)
+		{
+			$list[] = $r['name'];		
+		}
+		return $list;
+	}
+	
 	public function createSinkWithName($name)
 	{
 		if(false === ($name = $this->sinkNameIsValid($name, true)))
