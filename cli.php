@@ -8,6 +8,7 @@ class LensCLI extends Router
 	{
 		parent::__construct();
 		$this->sapi['cli']['__DEFAULT__'] = array('file' => PLATFORM_PATH . 'cli.php', 'class' => 'CliHelp');
+		$this->sapi['cli']['indexer'] = array('class' => 'LensIndexer', 'description' => 'Launch the continual indexing process');
 		$this->sapi['cli']['create'] = array('class' => 'LensCreate', 'description' => 'Create a new event sink');
 		$this->sapi['cli']['event'] = array('class' => 'LensEvent', 'description' => 'Log a new event to a sink');
 		$this->sapi['cli']['add-index'] = array('class' => 'LensAddIndex', 'description' => 'Create a new index on a sink');
@@ -84,7 +85,7 @@ class LensEvent extends LensCommandLine
 	public function main($args)
 	{
 		print_r($this->data);
-		$this->model->addEvent($this->target, $this->data);
+		$this->model->addEvent($this->target, $this->data, true);
 	}
 }
 
@@ -196,5 +197,44 @@ class LensAddGroup extends LensCommandLine
 		}
 		$this->model->createGroupForSinkWithName($this->target, $this->groupName, $this->fields, $this->parent);
 		return 0;	
+	}
+}
+
+class LensIndexer extends LensCommandLine
+{
+	public function main($args)
+	{
+		require_once(MODULES_ROOT . 'log/model.php');
+		Logger::$stderr = true;
+		$logger = Logger::getInstance();
+		$logger->log('Lens indexer started', LOG_INFO, 'lens', $this->request);
+		$shown = false;
+		$tcount = 0;
+		while(true)
+		{
+			$count = 0;
+			$list = $this->model->sinkNameList();
+			foreach($list as $sink)
+			{
+				$count += $this->model->indexEventsInSinkWithName($sink, 50);
+			}
+			if($count)
+			{
+				$tcount += $count;
+				$logger->log("Indexed $tcount event" . ($tcount == 1 ? '' : 's') . "...", LOG_INFO, 'lens', $this->request);
+				$shown = false;
+				sleep(2);
+			}
+			else
+			{
+				if(!$shown)
+				{
+					$logger->log("All updates completed, going to sleep.", LOG_INFO, 'lens', $this->request);
+				}
+				$shown = true;
+				$tcount = 0;
+				sleep(10);
+			}
+		}
 	}
 }
