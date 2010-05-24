@@ -29,6 +29,8 @@
 
 uses('model', 'uuid', 'dbschema');
 
+if(!defined('LENS_IRI')) define('LENS_IRI', null);
+
 class Lens extends Model
 {
 	protected $schema;
