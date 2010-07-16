@@ -37,9 +37,11 @@ class Lens extends Model
 	protected $sinks;
 	protected $indices;
 	
-	public static function getInstance($args = null, $className = null, $defaultDbIri = null)
+	public static function getInstance($args = null)
 	{
-		return Model::getInstance($args, ($className ? $className : 'Lens'), ($defaultDbIri ? $defaultDbIri : LENS_IRI));
+		if(!isset($args['class'])) $args['class'] = 'Lens';
+		if(!isset($args['db'])) $args['db'] = LENS_IRI;
+		return Model::getInstance($args);
 	}
 
 	public function sinkNameIsValid($name, $verbose = false)

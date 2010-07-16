@@ -29,14 +29,18 @@
 
 uses('module');
 
+if(!defined('LENS_IRI')) define('LENS_IRI');
+
 class LensModule extends Module
 {
 	public $latestVersion = 4;
 	public $moduleId = 'com.nexgenta.lens';
 	
-	public static function getInstance($args = null, $className = null, $defaultDbIri = null)
+	public static function getInstance($args = null)
 	{
-		return Model::getInstance($args, ($className ? $className : 'LensModule'), ($defaultDbIri ? $defaultDbIri : LENS_IRI));
+		if(!isset($args['class'])) $args['class'] = 'LensModule';
+		if(!isset($args['db'])) $args['db'] = LENS_IRI;
+		return Model::getInstance($args);
 	}
 
 	public function updateSchema($targetVersion)
