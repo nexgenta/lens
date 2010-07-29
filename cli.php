@@ -14,6 +14,7 @@ class LensCLI extends Router
 		$this->sapi['cli']['add-index'] = array('class' => 'LensAddIndex', 'description' => 'Create a new index on a sink');
 		$this->sapi['cli']['reindex'] = array('class' => 'LensReindex', 'description' => 'Re-index events in a sink');
 		$this->sapi['cli']['add-group'] = array('class' => 'LensAddGroup', 'description' => 'Create a new aggregate on a sink');
+		$this->sapi['cli']['sinks'] = array('class' => 'LensListSinks', 'description' => 'List available event sinks');
 	}
 }
 
@@ -235,6 +236,24 @@ class LensIndexer extends LensCommandLine
 				$tcount = 0;
 				sleep(10);
 			}
+		}
+	}
+}
+
+class LensListSinks extends LensCommandLine
+{
+	public function main($args)
+	{
+		$list = $this->model->sinkNameList();
+		if(!$list)
+		{
+			echo "No event sinks have been defined.\n";
+			return 0;
+		}		
+		echo "Available event sinks:\n";
+		foreach($list as $n)
+		{
+			echo "  " . $n . "\n";
 		}
 	}
 }
